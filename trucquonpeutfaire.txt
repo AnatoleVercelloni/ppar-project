@@ -1,0 +1,52 @@
+
+
+pour voir les temps:
+	gnuprofiler -pg
+	gprov
+	
+=> bon, ça marche pas parce que j'ai pas linux :(
+maiis c'est QR qui prends 99,99999% du temps (photo à l'appui)
+							t->∞
+	
+	
+pour le choix de npoint:
+	il faut pas prendre tous les points de fichier 
+	et il faut prendre des points equirépartis sur la terre.
+	(load data_point)
+
+
+setup_spherical_harmonics : - paral les boucles for
+- reduire les tailles de A et B
+
+
+triple for => on donne a chaque processus x ligne à traiter
+	for npoints           
+		for l < lmax       
+			modifie A
+			for l
+				modifie A
+	
+m = npoint, n = nvar	
+					 ____
+					|	 |
+					| QR |
+					|____|
+le prof a dit que c'est plus malin de faire sur les lignes que sur
+les colonnes
+==> paraléliser sur les ligne ça à l'air une très bonne idée
+il faut juste vérifier que chaque tour de boucle prend le même temps
+(spoiler non, les tours sont de plus en plus courts)
+En fait, on va diviser A en lignes et paraleliser householder pour QR
+parce que les boucles de QR sont pas de la même durée
+
+
+  multiply QT 
+
+triangular_solve
+
+=>on récupere V
+
+
+on utilise V pour écrire le fichier final
+
+

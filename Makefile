@@ -1,5 +1,6 @@
 LDLIBS = -lm 
-CFLAGS = -Wall -g -O3
+CFLAGS = -Wall -g -O3 -pg
+LDFLAGS = -pg
 
 ALL: model validate
 
