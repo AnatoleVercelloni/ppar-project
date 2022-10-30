@@ -15,4 +15,4 @@ harmonics.o: harmonics.h
 .PHONY: clean
 
 clean:
-	rm -f model validate *.o
+	rm -f model validate model_par *.o
