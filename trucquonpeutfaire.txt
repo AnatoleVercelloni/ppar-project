@@ -2,7 +2,7 @@
 
 pour voir les temps:
 	gnuprofiler -pg
-	gprov
+	gprof
 	
 => bon, ça marche pas parce que j'ai pas linux :(
 maiis c'est QR qui prends 99,99999% du temps (photo à l'appui)
