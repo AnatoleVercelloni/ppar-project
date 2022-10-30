@@ -78,6 +78,7 @@ void load_data_points(const char *filename, int npoint, struct data_points *self
 	if (f == NULL)
 		err(1, "cannot open %s\n", filename);
 	
+	//On recherche le nombre de points total dans le fichier "tot"
 	int tot = 0;
 	char * tabfile[4] = {"ETOPO1_small.csv", "ETOPO1_medium.csv", "ETOPO1_high.csv", "ETOPO1_ultra.csv"};
 	int tabtot[4] = {64800, 583000, 6480000, 233280000};
@@ -88,21 +89,22 @@ void load_data_points(const char *filename, int npoint, struct data_points *self
 	}
 	if (tot == 0) {
 		err(1, "%s not in the database\n", filename);
-	
 	}
 	
+	//On parcours tout le fichier, mais on n enregistre le point que selon un certain pas "jump"
+	// Et jusqu a obtenir npoint (grace a la variable "j")
 	int jump = tot / npoint;
 	int j = 0;
 	printf("%d, %d\n", jump, tot);
 	for (int i = 0; i < tot; i++) {
 		double temp[3];
 		int k = fscanf(f, "%lg %lg %lg", &temp[0], &temp[1], &temp[2]);
-		if (i % jump == 0 && j < npoint) {
+		if (i % jump == 0) {
 			printf("%d\t", i);
 			self->lambda[j] = temp[0];
 			self->phi[j] = temp[1];
 			self->V[j] = temp[2];
-			j ++;
+			if (++j == npoint) break;
 		}
 
 		if (k == EOF) {
