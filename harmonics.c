@@ -18,7 +18,7 @@ double wtime()
 /* represent n in <= 8 char  */
 void human_format(char * target, long n) {
         if (n < 1000) {
-                sprintf(target, "%" PRId64, n);
+                sprintf(target, "%ld" PRId64, n);
                 return;
         }
         if (n < 1000000) {
