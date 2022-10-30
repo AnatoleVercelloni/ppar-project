@@ -241,9 +241,9 @@ void linear_least_squares(int m, int n, double *A, double *b)
 int main(int argc, char ** argv)
 {
 	// MPI_Init(&argc, &argv);
-	int rank;
-	int p;
-	
+	int rank = 0;
+	int p = 0;
+	p= rank;
 	process_command_line_options(argc, argv);
 
 	/* preparations and memory allocation */
