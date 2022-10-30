@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <sys/time.h>
 #include <inttypes.h>
+#include <string.h>
 
 #include "harmonics.h"
 
@@ -75,10 +76,35 @@ void load_data_points(const char *filename, int npoint, struct data_points *self
 
 	FILE *f = fopen(filename, "r");
 	if (f == NULL)
-		err(1, "cannot open %s", filename);
+		err(1, "cannot open %s\n", filename);
 	
-	for (int i = 0; i < npoint; i++) {
-		int k = fscanf(f, "%lg %lg %lg", &self->lambda[i], &self->phi[i], &self->V[i]);
+	int tot = 0;
+	char * tabfile[4] = {"ETOPO1_small.csv", "ETOPO1_medium.csv", "ETOPO1_high.csv", "ETOPO1_ultra.csv"};
+	int tabtot[4] = {64800, 583000, 6480000, 233280000};
+	for (int i = 0; i < 4; i++){
+		if (strcmp(filename, tabfile[i]) == 0) {
+			tot = tabtot[i];
+		}
+	}
+	if (tot == 0) {
+		err(1, "%s not in the database\n", filename);
+	
+	}
+	
+	int jump = tot / npoint;
+	int j = 0;
+	printf("%d, %d\n", jump, tot);
+	for (int i = 0; i < tot; i++) {
+		double temp[3];
+		int k = fscanf(f, "%lg %lg %lg", &temp[0], &temp[1], &temp[2]);
+		if (i % jump == 0 && j < npoint) {
+			printf("%d\t", i);
+			self->lambda[j] = temp[0];
+			self->phi[j] = temp[1];
+			self->V[j] = temp[2];
+			j ++;
+		}
+
 		if (k == EOF) {
 			if (ferror(f))
 				err(1, "read error");
