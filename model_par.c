@@ -240,6 +240,9 @@ void linear_least_squares(int m, int n, double *A, double *b)
 
 int main(int argc, char ** argv)
 {
+	// MPI_Init(&argc, &argv);
+	int rank;
+	int p;
 	
 	process_command_line_options(argc, argv);
 
@@ -249,8 +252,9 @@ int main(int argc, char ** argv)
 	if (nvar > npoint)
 		errx(1, "not enough data points");
 	
+	int slice = ceil(nvar/p);
 
-	long matrix_size = sizeof(double) * nvar * npoint;
+	long matrix_size = sizeof(double) * slice * npoint; //chaque process a une petite partie de la matrice
 	char hsize[16];
 	human_format(hsize, matrix_size);
 	printf("Matrix size: %sB\n", hsize); //facteur limitant taille, parallelisation
@@ -259,20 +263,23 @@ int main(int argc, char ** argv)
 	if (A == NULL)
 		err(1, "cannot allocate matrix");
 
+	// bonne chose de diviser ca aussi mais plus tard
 	double * P = malloc((lmax + 1) * (lmax + 1) * sizeof(*P));
 	double * v = malloc(npoint * sizeof(*v));
+	
 	if (P == NULL || v == NULL)
 		err(1, "cannot allocate data points\n");
 
 	printf("Reading data points from %s\n", data_filename);
 	struct data_points data;
-	load_data_points(data_filename, npoint, &data);
+	load_data_points(data_filename, npoint, &data); //a modifier 
 	printf("Successfully read %d data points\n", npoint);
 	
 	printf("Building matrix\n");
 	struct spherical_harmonics model;
-	setup_spherical_harmonics(lmax, &model);
+	setup_spherical_harmonics(lmax, &model); //a modifier
 
+	// a modifier
 	for (int i = 0; i < npoint; i++) {
 		computeP(&model, P, sin(data.phi[i]));
 		
@@ -295,7 +302,8 @@ int main(int argc, char ** argv)
 	double start = wtime();
 	
 	/* the real action takes place here */
-	linear_least_squares(npoint, nvar, A, data.V);
+	linear_least_squares(npoint, nvar, A, data.V); //chaque process lance  cette 
+												//fonction avec sa partie de la matrice
 	
 	double t = wtime()  - start;
 	double FLOPS = FLOP / t;
