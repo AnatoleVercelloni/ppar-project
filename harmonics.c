@@ -95,12 +95,10 @@ void load_data_points(const char *filename, int npoint, struct data_points *self
 	// Et jusqu a obtenir npoint (grace a la variable "j")
 	int jump = tot / npoint;
 	int j = 0;
-	printf("%d, %d\n", jump, tot);
 	for (int i = 0; i < tot; i++) {
 		double temp[3];
 		int k = fscanf(f, "%lg %lg %lg", &temp[0], &temp[1], &temp[2]);
 		if (i % jump == 0) {
-			printf("%d\t", i);
 			self->lambda[j] = temp[0];
 			self->phi[j] = temp[1];
 			self->V[j] = temp[2];
