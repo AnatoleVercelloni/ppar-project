@@ -91,14 +91,14 @@ void load_data_points(const char *filename, int npoint, struct data_points *self
 		err(1, "%s not in the database\n", filename);
 	}
 	
-	//On parcours tout le fichier, mais on n enregistre le point que selon un certain pas "jump"
+	//On parcours tout le fichier, mais on n enregistre le point que selon un certain pas "step"
 	// Et jusqu a obtenir npoint (grace a la variable "j")
-	int jump = tot / npoint;
+	int step = tot / npoint;
 	int j = 0;
 	for (int i = 0; i < tot; i++) {
 		double temp[3];
 		int k = fscanf(f, "%lg %lg %lg", &temp[0], &temp[1], &temp[2]);
-		if (i % jump == 0) {
+		if (i % step == 0) {
 			self->lambda[j] = temp[0];
 			self->phi[j] = temp[1];
 			self->V[j] = temp[2];
