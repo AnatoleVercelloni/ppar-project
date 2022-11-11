@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <getopt.h>
 #include <err.h>
+#include<mpi.h>
 
 
 #include "harmonics.h"
@@ -240,19 +241,37 @@ void linear_least_squares(int m, int n, double *A, double *b)
 
 int main(int argc, char ** argv)
 {
+
+	printf("Reading data points from %s\n", data_filename);
+	struct data_points data;
+	load_data_points(data_filename, npoint, &data); //modifie 
+	printf("Successfully read %d data points\n", npoint);
+	
+	printf("Building matrix\n");
+	struct spherical_harmonics model;
+	setup_spherical_harmonics(lmax, &model); //peut etre pas a modifier du coup
+
 	// MPI_Init(&argc, &argv);
 	int rank = 0;
 	int p = 0;
-	p= rank;
+	p = rank;
+	// PI_Comm_size(MPI_COMM_WORLD, &p);
+	// MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	process_command_line_options(argc, argv);
 
 	/* preparations and memory allocation */
-	int nvar = (lmax + 1) * (lmax + 1);
+	/*Je pense qu il faut pas couper avec nvar mais avec lmax, meme si on aura plus de padding, 
+	ce sera moins galere a parallilizer
+	int slice = ceil(lmax/p);
+	int nvar = slice * (lmax + 1);
+	*/
+
+	int nvar = (lmax + 1) * (lmax + 1); //changer ca
 	printf("Linear Least Squares with dimension %d x %d\n", npoint, nvar);
 	if (nvar > npoint)
 		errx(1, "not enough data points");
 	
-	int slice = ceil(nvar/p);
+	int slice = ceil(nvar/p); //changer ca
 
 	long matrix_size = sizeof(double) * slice * npoint; //chaque process a une petite partie de la matrice
 	char hsize[16];
@@ -270,20 +289,22 @@ int main(int argc, char ** argv)
 	if (P == NULL || v == NULL)
 		err(1, "cannot allocate data points\n");
 
+	/*Il faut mettre ca avant la parallelization
 	printf("Reading data points from %s\n", data_filename);
 	struct data_points data;
-	load_data_points(data_filename, npoint, &data); //a modifier 
+	load_data_points(data_filename, npoint, &data); //modifie 
 	printf("Successfully read %d data points\n", npoint);
 	
 	printf("Building matrix\n");
 	struct spherical_harmonics model;
 	setup_spherical_harmonics(lmax, &model); //a modifier
+	*/
 
-	// a modifier
+	// modifie, a verifier
 	for (int i = 0; i < npoint; i++) {
 		computeP(&model, P, sin(data.phi[i]));
 		
-		for (int l = 0; l <= lmax; l++) {
+		for (int l = slice * rank; l <= slice * (rank + 1); l++) { //Je suis pas du tout sur...
 			/* zonal term */
 			A[i + npoint * CT(l, 0)] = P[PT(l, 0)];
 	
@@ -302,10 +323,13 @@ int main(int argc, char ** argv)
 	double start = wtime();
 	
 	/* the real action takes place here */
-	linear_least_squares(npoint, nvar, A, data.V); //chaque process lance  cette 
-												//fonction avec sa partie de la matrice
+	linear_least_squares(npoint, nvar, A, data.V); 
+	//chaque process lance  cette fonction avec sa partie de la matrice
 	
 	double t = wtime()  - start;
+
+	// MPI_Finalize();
+
 	double FLOPS = FLOP / t;
 	char hflops[16];
 	human_format(hflops, FLOPS);
