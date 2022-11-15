@@ -6,7 +6,7 @@
 #include <err.h>
 
 
-#include "harmonics.h"
+#include "../par/harmonics.h"
 
 int lmax = -1;
 int npoint;

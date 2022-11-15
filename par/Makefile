@@ -8,8 +8,6 @@ model_par: model_par.o harmonics.o
 validate: validate.o harmonics.o 
 
 
-
-
 model_par.o: model_par.c harmonics.h
 	mpicc -c model_par.c
 
