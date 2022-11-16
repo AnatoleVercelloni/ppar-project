@@ -79,7 +79,7 @@ void load_data_points(const char *filename, int npoint, struct data_points *self
 		err(1, "cannot open %s\n", filename);
 	
 	//On recherche le nombre de points total dans le fichier "tot"
-	int tot = 0;
+	int tot = 64800;
 	char * tabfile[4] = {"../ETOPO1_small.csv", "ETOPO1_medium.csv", "ETOPO1_high.csv", "ETOPO1_ultra.csv"};
 	int tabtot[4] = {64800, 583000, 6480000, 233280000};
 	for (int i = 0; i < 4; i++){

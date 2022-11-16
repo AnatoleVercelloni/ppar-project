@@ -161,7 +161,6 @@ void QR_factorize(int m, int n, double * A, double * tau, int p, int rank)
 	for (int i = 0; i < n; ++i) {
 		int root_rank = i / slice;
 		if (rank == root_rank) {
-			double temp[m-i];
 			double aii = A[i % slice + i * slice];
 			double anorm = norm(slice - i, &A[i % slice  + i * slice]) * norm(slice - i, &A[i % slice  + i * slice]);
 			MPI_Allreduce(MPI_IN_PLACE, &anorm, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
@@ -257,19 +256,30 @@ void multiply_Qt(int m, int k, double * A, double * tau, double * c, int p, int 
  */
 void triangular_solve(int n, const double *U, int ldu, double *b, int p, int rank) 
 {
-	int slice = ceil(ldu/p);
 	for (int k = n - 1; k >= 0; k--) {
-		int root_rank = k / slice;
+		int root_rank = k / ldu;
 		
 		if (root_rank == rank) {
-			b[k] /= U[k * slice + k];
-			MPI_Bcast(&b[k], 1, MPI_DOUBLE, root_rank, MPI_COMM_WORLD);
-			for (;;)
+			int piv = U[k * ldu + k];
+			b[k] /= piv;
+			MPI_Bcast(&piv, 1, MPI_DOUBLE, root_rank, MPI_COMM_WORLD);
+			for (int i = 0; i < k % ldu ; i++ ) {
+				b[i] -= b[k] * U[i + k*ldu];
+			}
 		}
 
-		b[k] /= U[k * ldu + k];
-		for (int i = 0; i < k; i++)
-	    	b[i] -= b[k] * U[i + k*ldu];
+		else if (root_rank > rank) {
+			int piv;
+			MPI_Bcast(&piv, 1, MPI_DOUBLE, root_rank, MPI_COMM_WORLD);
+			for (int i = 0; i < ldu; i++) {
+				b[i] -= piv * U[i + k*ldu];
+			}
+		}
+
+		else {
+			int p;
+			MPI_Bcast(&p, 1, MPI_DOUBLE, root_rank, MPI_COMM_WORLD);
+		}
     }
 }
 
@@ -288,42 +298,39 @@ void triangular_solve(int n, const double *U, int ldu, double *b, int p, int ran
 void linear_least_squares(int m, int n, double *A, double *b, int p, int rank)
 {
 	assert(m >= n);
-
+	int slice = ceil(npoint / p);
 	double tau[n];
 	QR_factorize(m, n, A, tau, p, rank);                    /* QR factorization of A */
 	multiply_Qt(m, n, A, tau, b, p, rank);                /* B[0:m] := Q**T * B[0:m] */
-	// ATTENTION vecteur C different pour tous les ranks
-	triangular_solve(n, A, m, b, p, rank);          /* B[0:n] := inv(R) * B[0:n] */
+	// ATTENTION vecteur b different pour tous les ranks
+	triangular_solve(n, A, slice, b, p, rank);          /* B[0:n] := inv(R) * B[0:n] */
 }
 
 /*****************************************************************************/
 
 int main(int argc, char ** argv)
 {
-
-
 	MPI_Init(&argc, &argv);
 	int rank = 0;
 	int p = 0;
-	p = rank;
 	MPI_Comm_size(MPI_COMM_WORLD, &p);
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
 	process_command_line_options(argc, argv);
-
-
 	int nvar = (lmax + 1) * (lmax + 1);
-	printf("Linear Least Squares with dimension %d x %d\n", npoint, nvar);
-	if (nvar > npoint)
-		errx(1, "not enough data points");
-	
 	int slice = ceil(npoint/p); //changer ca
-
 	long matrix_size = sizeof(double) * slice * npoint; 
-	// matrix de chaque rank
-	//chaque process a une petite partie de la matrice
-	char hsize[16];
-	human_format(hsize, matrix_size);
-	printf("Matrix size: %sB\n", hsize); //facteur limitant taille, parallelisation
+	if (rank == 0) {
+		printf("Linear Least Squares with dimension %d x %d\n", npoint, nvar);
+		if (nvar > npoint)
+			errx(1, "not enough data points");
+	
+		// matrix de chaque rank
+		//chaque process a une petite partie de la matrice
+		char hsize[16];
+		human_format(hsize, matrix_size);
+		printf("Matrix size: %sB\n", hsize); //facteur limitant taille, parallelisation
+	}
 
 	double *A = malloc(matrix_size);
 	if (A == NULL)
@@ -331,13 +338,13 @@ int main(int argc, char ** argv)
 
 	// bonne chose de diviser ca aussi mais plus tard
 	double * P = malloc((lmax + 1) * (lmax + 1) * sizeof(*P));
-	double * v = malloc(npoint * sizeof(*v));
+	double * v = malloc(slice * sizeof(*v));
 	
 	if (P == NULL || v == NULL)
 		err(1, "cannot allocate data points\n");
 
-
-	printf("Reading data points from %s\n", data_filename);
+	
+	printf("%d : Reading data points from %s\n", rank, data_filename);
 	struct data_points data;
 	load_data_points(data_filename, npoint, &data); //modifie 
 	printf("Successfully read %d data points\n", npoint);
@@ -349,7 +356,7 @@ int main(int argc, char ** argv)
 
 	// modifie, a verifier
 	for (int i = 0; i < slice; i++) {
-		computeP(&model, P, sin(data.phi[i]));
+		computeP(&model, P, sin(data.phi[i + (slice * rank)]));
 		
 		for (int l = 0; l <= lmax + 1; l++) { 
 			/* zonal term */
@@ -357,43 +364,54 @@ int main(int argc, char ** argv)
 	
 			/* tesseral terms */
 			for (int m = 1; m <= l; m++) {
-				A[i + slice * CT(l, m)] = P[PT(l, m)] * cos(m * data.lambda[i]);
-				A[i + slice * ST(l, m)] = P[PT(l, m)] * sin(m * data.lambda[i]);
+				A[i + slice * CT(l, m)] = P[PT(l, m)] * cos(m * data.lambda[i + (slice * rank)]);
+				A[i + slice * ST(l, m)] = P[PT(l, m)] * sin(m * data.lambda[i + (slice * rank)]);
 			}
 		}
 	}
-	
 	double FLOP = 2. * nvar * nvar * npoint;
-	char hflop[16];
-	human_format(hflop, FLOP);
-	printf("Least Squares (%sFLOP)\n", hflop);
+	if (rank == 0) {
+		char hflop[16];
+		human_format(hflop, FLOP);
+		printf("Least Squares (%sFLOP)\n", hflop);
+	}
+
 	double start = wtime();
 	
 	/* the real action takes place here */
-	linear_least_squares(npoint, nvar, A, data.V, p, rank); 
+	linear_least_squares(npoint, nvar, A, v, p, rank); 
 	//chaque process lance  cette fonction avec sa partie de la matrice
 	
 	double t = wtime()  - start;
 
-	MPI_Finalize();
-
-	double FLOPS = FLOP / t;
-	char hflops[16];
-	human_format(hflops, FLOPS);
-	printf("Completed in %.1f s (%s FLOPS)\n", t, hflops);
-
-	double res = 0;
-	for (int j = nvar; j < npoint; j++)
-		res += data.V[j] * data.V[j];
-	printf("residual sum of squares %g\n", res);
-
-	printf("Saving model in %s\n", model_filename);
-	FILE *g = fopen(model_filename, "w");
-	if (g == NULL)
-		err(1, "cannot open %s for writing\n", model_filename);
-	for (int l = 0; l <= lmax; l++) {
-		fprintf(g, "%d\t0\t%.18g\t0\n", l, data.V[CT(l, 0)]);
-		for (int m = 1; m <= l; m++)
-			fprintf(g, "%d\t%d\t%.18g\t%.18g\n", l, m, data.V[CT(l, m)], data.V[ST(l, m)]);
+	if (rank == p - 1){
+		MPI_Gather(v, npoint - slice * (p-1), MPI_DOUBLE, &data.V[rank * slice], npoint - slice * (p-1), MPI_DOUBLE, 0, MPI_COMM_WORLD);	
+	} 
+	else {
+		MPI_Gather(v, slice, MPI_DOUBLE, &data.V[rank * slice], slice, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 	}
+	
+	
+	if (rank == 0) {
+		double FLOPS = FLOP / t;
+		char hflops[16];
+		human_format(hflops, FLOPS);
+		printf("Completed in %.1f s (%s FLOPS)\n", t, hflops);
+
+		double res = 0;
+		for (int j = nvar; j < npoint; j++)
+			res += data.V[j] * data.V[j];
+		printf("residual sum of squares %g\n", res);
+
+		printf("Saving model in %s\n", model_filename);
+		FILE *g = fopen(model_filename, "w");
+		if (g == NULL)
+			err(1, "cannot open %s for writing\n", model_filename);
+		for (int l = 0; l <= lmax; l++) {
+			fprintf(g, "%d\t0\t%.18g\t0\n", l, data.V[CT(l, 0)]);
+			for (int m = 1; m <= l; m++)
+				fprintf(g, "%d\t%d\t%.18g\t%.18g\n", l, m, data.V[CT(l, m)], data.V[ST(l, m)]);
+		}
+	}
+	MPI_Finalize();
 }

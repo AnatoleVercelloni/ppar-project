@@ -2,7 +2,7 @@ LDLIBS = -lm
 CFLAGS = -Wall -g -O3
 #LDFLAGS = -pg
 
-ALL: model validate model_par
+ALL: model validate
 
 
 model: model.o harmonics.o
