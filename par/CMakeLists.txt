@@ -23,11 +23,15 @@ message(STATUS "Run: ${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} ${MPIEXEC_MAX_NUMPROCS} 
 target_link_libraries(${APP_EXE} PUBLIC MPI::MPI_C)
 
 
+target_link_libraries(${APP_EXE} PRIVATE m)
+
+target_link_libraries(${APP_EXE2} PRIVATE m)
+
 target_compile_options(${APP_EXE}
     PRIVATE -Wall
 )
 
 
 target_compile_options( ${APP_EXE2}
-    PRIVATE -Wall
+    PRIVATE -Wall 
 )

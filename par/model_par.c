@@ -154,6 +154,7 @@ void multiply_householder(int m, int n, double *v, double tau, double *c, int ld
  *
  * where tau[i] is a real scalar, and v is a real vector with v[0:i-1] = 0 and 
  * v[i] = 1; v[i+1:m] is stored on exit in A[i+1:m, i].
+	m = npoint n = nvar
  */
 void QR_factorize(int m, int n, double * A, double * tau, int p, int rank)
 {
@@ -315,11 +316,12 @@ int main(int argc, char ** argv)
 	int p = 0;
 	MPI_Comm_size(MPI_COMM_WORLD, &p);
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
+	
 	process_command_line_options(argc, argv);
 	int nvar = (lmax + 1) * (lmax + 1);
-	int slice = ceil(npoint/p); //changer ca
-	long matrix_size = sizeof(double) * slice * npoint; 
+	int slice = ceil(npoint/p); 
+	printf("slice = %d\n",slice);
+	long matrix_size = sizeof(double) * slice * nvar; 
 	if (rank == 0) {
 		printf("Linear Least Squares with dimension %d x %d\n", npoint, nvar);
 		if (nvar > npoint)
@@ -356,12 +358,12 @@ int main(int argc, char ** argv)
 
 	// modifie, a verifier
 	for (int i = 0; i < slice; i++) {
+		
 		computeP(&model, P, sin(data.phi[i + (slice * rank)]));
 		
-		for (int l = 0; l <= lmax + 1; l++) { 
+		for (int l = 0; l <= lmax; l++) { 
 			/* zonal term */
 			A[i + slice * CT(l, 0)] = P[PT(l, 0)];
-	
 			/* tesseral terms */
 			for (int m = 1; m <= l; m++) {
 				A[i + slice * CT(l, m)] = P[PT(l, m)] * cos(m * data.lambda[i + (slice * rank)]);
@@ -369,6 +371,7 @@ int main(int argc, char ** argv)
 			}
 		}
 	}
+	printf("rank = %d p = %d\n", rank, p);
 	double FLOP = 2. * nvar * nvar * npoint;
 	if (rank == 0) {
 		char hflop[16];

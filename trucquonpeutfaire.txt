@@ -25,6 +25,11 @@ triple for => on donne a chaque processus x ligne à traiter
 			modifie A
 			for l
 				modifie A
+				
+
+linear_least_square(npoint, nvar, A, data.V, p, rank)     =>   (m, n, A, b, p, rank)
+
+
 	
 m = npoint, n = nvar	
 					 ____
