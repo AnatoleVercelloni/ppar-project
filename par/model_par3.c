@@ -179,8 +179,8 @@ void QR_factorize(int m, int n, double * A, double * tau, int p, int rank)
 		if (aii < 0) anorm = -anorm;
 		tau[i] = (anorm - aii) / anorm;
 
-		for(int j = index; j < slice; j++) {
-			if ((root_rank  == rank) && (j == i % slice)) continue;
+		if (!(root_rank  == rank)) A[i * slice] /= (aii - anorm);
+		for(int j = index + 1; j < slice; j++) {
 			A[i * slice + j] /= (aii - anorm);
 		}
 
@@ -209,24 +209,20 @@ void multiply_Qt(int m, int k, double * A, double * tau, double * c, int p, int 
 {
     int slice = ceil(m/p);
 	for (int i = 0; i < k; i++) {
-		int root_rank = i / slice;
 		/* Apply H(i) to A[i:m] */
-		if (rank == root_rank) {
-			double aii = A[i % slice + i * slice];
-			A[i % slice + i * slice] = 1;
-            // if (i == 0) multiply_householder(slice, 1, &A[i % slice + i * slice], tau[i], &c[i], slice, p, rank);
-			multiply_householder(slice - (i % slice), 1, &A[i % slice + i * slice], tau[i], &c[i], slice, p, rank);
-            // faire belek à c (donc b)
-			A[i % slice + i * slice] = aii;
+		int root_rank = i / slice;
+		int index;
+		double aii;
+		if (rank == root_rank) { 
+			index = i % slice;
+			aii = A[index + i * slice];
+			A[index + i * slice] = 1;
 		}
+		else if (rank < root_rank) index = 0;
+		else index = slice;
+		multiply_householder(slice - index, 1, &A[index + i * slice], tau[i], &c[i], slice, p, rank);
+		if (rank == root_rank) A[index + i * slice] = aii;
 
-		else if (rank < root_rank) {
-			multiply_householder(slice, 1, &A[i * slice], tau[i], &c[i], slice, p, rank);
-		}
-
-		else {
-			multiply_householder(0, 1, A, tau[i], &c[i], slice, p, rank);
-		}
 	}
 }
 
@@ -240,29 +236,20 @@ void multiply_Qt(int m, int k, double * A, double * tau, double * c, int p, int 
 void triangular_solve(int n, const double *U, int ldu, double *b, int p, int rank) 
 {
     int slice = ceil(ldu/p);
-
     for (int k = n - 1; k >= 0; k--) {
 		int root_rank = k / slice;
-		
+		int index;
 		if (root_rank == rank) {
-			b[k] /= U[k * slice + k];
-			MPI_Bcast(&b[k], 1, MPI_DOUBLE, root_rank, MPI_COMM_WORLD);
-			for (int i = 0; i < k % (slice + 1) ; i++ ) {
-				b[i] -= b[k] * U[i + k*slice];
+			index = k % slice;
+			b[k] /= U[k * slice + k % slice];
 			}
+		else if (root_rank > rank) {index = slice;}
+		else {index = 0;}
+		MPI_Bcast(&b[k], 1, MPI_DOUBLE, root_rank, MPI_COMM_WORLD);
+		for (int i = 0; i < index; i++ ) {
+			b[i] -= b[k] * U[i + k*slice];
 		}
-
-		else if (root_rank > rank) {
-			MPI_Bcast(&b[k], 1, MPI_DOUBLE, root_rank, MPI_COMM_WORLD);
-			for (int i = 0; i < slice; i++) {
-				b[i] -= b[k] * U[i + k*slice];
-			}
-		}
-
-		else {
-			MPI_Bcast(&b[k], 1, MPI_DOUBLE, root_rank, MPI_COMM_WORLD);
-		}
-    }
+   }
 }
 
 /*
