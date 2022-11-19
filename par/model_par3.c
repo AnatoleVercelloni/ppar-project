@@ -165,10 +165,10 @@ void QR_factorize(int m, int n, double * A, double * tau, int p, int rank)
         double aii, anorm;
         int index;
         if (rank == root_rank) {
-            index = i - (slice * rank);
+            index = i % slice;
             aii = A[index + i * slice];
         }
-        else if (rank > root_rank) {index = 0;}
+		else if (rank > root_rank) {index = 0;}
         else {index = slice;}
         
         anorm = norm(slice - index, &A[index + i * slice]);
@@ -179,9 +179,14 @@ void QR_factorize(int m, int n, double * A, double * tau, int p, int rank)
 		if (aii < 0) anorm = -anorm;
 		tau[i] = (anorm - aii) / anorm;
 
-		for(int j = index + 1; j < slice; j++) {
+		for(int j = index; j < slice; j++) {
+			if ((root_rank  == rank) && (j == i % slice)) continue;
 			A[i * slice + j] /= (aii - anorm);
 		}
+
+		if (root_rank == rank) A[index + i * slice] = 1;
+		multiply_householder(slice - index, n-i-1, &A[i*slice + index], tau[i], &A[(i+1)*slice + index], slice, p, rank);
+        if (root_rank == rank) A[index + i * slice] = anorm;
 	}
 }
 
