@@ -294,7 +294,7 @@ int main(int argc, char ** argv)
 
 	/* preparations and memory allocation */
 	int nvar = (lmax + 1) * (lmax + 1);
-	printf("Linear Least Squares with dimension %d x %d\n", npoint, nvar);
+	if (rank == 0) printf("Linear Least Squares with dimension %d x %d\n", npoint, nvar);
 	if (nvar > npoint)
 		errx(1, "not enough data points");
 	
@@ -302,7 +302,7 @@ int main(int argc, char ** argv)
 	long matrix_size = sizeof(double) * nvar * slice;
 	char hsize[16];
 	human_format(hsize, matrix_size);
-	printf("Matrix size: %sB\n", hsize); //facteur limitant taille, parallelisation
+	if (rank == 0) printf("Matrix size: %sB\n", hsize); //facteur limitant taille, parallelisation
 
 	double *A = malloc(matrix_size);
 	if (A == NULL)
@@ -314,12 +314,12 @@ int main(int argc, char ** argv)
 	if (P == NULL || v == NULL)
 		err(1, "cannot allocate data points\n");
 
-	printf("Reading data points from %s\n", data_filename);
+	if (rank == 0) printf("Reading data points from %s\n", data_filename);
 	struct data_points data;
 	load_data_points(data_filename, npoint, &data);
-	printf("Successfully read %d data points\n", npoint);
+	if (rank == 0) printf("Successfully read %d data points\n", npoint);
 	
-	printf("Building matrix\n");
+	if (rank == 0) printf("Building matrix\n");
 	struct spherical_harmonics model;
 	setup_spherical_harmonics(lmax, &model);
 
@@ -342,7 +342,7 @@ int main(int argc, char ** argv)
 	double FLOP = 2. * nvar * nvar * npoint;
 	char hflop[16];
 	human_format(hflop, FLOP);
-	printf("Least Squares (%sFLOP)\n", hflop);
+	if (rank == 0) printf("Least Squares (%sFLOP)\n", hflop);
 	double start = wtime();
 	
 	/* the real action takes place here */
