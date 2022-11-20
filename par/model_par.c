@@ -13,6 +13,7 @@
 
 int lmax = -1;
 int npoint;
+int nvar;
 char * data_filename;
 char * model_filename;
 
@@ -135,12 +136,13 @@ double norm(int n, double const *x)
  * C is a 2D array of dimension (ldc, n).  On exit, C is overwritten with H*C.
  * It is required that ldc >= m.
  */
-void multiply_householder(int m, int n, double *v, double tau, double *c, int ldc)
+void multiply_householder(int m, int n, double *v, double tau, double *c, int ldc, int p, int rank)
 {
 	for (int j = 0; j < n; j++) {
 		double sum = 0;
 		for (int i = 0; i < m; i++)
 			sum += c[j * ldc + i] * v[i];
+		MPI_Allreduce(MPI_IN_PLACE, &sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 		for (int i = 0; i < m; i++)
 			c[j * ldc + i] -= tau * v[i] * sum;
 	}
@@ -168,22 +170,36 @@ void multiply_householder(int m, int n, double *v, double tau, double *c, int ld
  * where tau[i] is a real scalar, and v is a real vector with v[0:i-1] = 0 and 
  * v[i] = 1; v[i+1:m] is stored on exit in A[i+1:m, i].
  */
-void QR_factorize(int m, int n, double * A, double * tau)
+void QR_factorize(int m, int n, double * A, double * tau, int p, int rank)
 {
+	int slice = ceil(m/p);
 	for (int i = 0; i < n; ++i) {
-		/* Generate elementary reflector H(i) to annihilate A(i+1:m,i) */
-		double aii = A[i + i * m];
-		double anorm = -norm(m - i, &A[i + i * m]);
-		if (aii < 0)
-			anorm = -anorm;
+		int root_rank = i / slice;
+        double aii, anorm;
+        int index;
+        if (rank == root_rank) {
+            index = i % slice;
+            aii = A[index + i * slice];
+        }
+		else if (rank > root_rank) {index = 0;}
+        else {index = slice;}
+        
+        anorm = norm(slice - index, &A[index + i * slice]);
+        anorm = anorm * anorm;
+        MPI_Allreduce(MPI_IN_PLACE, &anorm, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+		MPI_Bcast(&aii, 1, MPI_DOUBLE, root_rank, MPI_COMM_WORLD);
+        anorm = - sqrt(anorm);
+		if (aii < 0) anorm = -anorm;
 		tau[i] = (anorm - aii) / anorm;
-		for (int j = i + 1; j < m; j++)
-			A[i * m + j] /= (aii - anorm);
 
-		/* Apply H(i) to A(i:m,i+1:n) from the left */
-		A[i + i * m] = 1;
-		multiply_householder(m-i, n-i-1, &A[i*m + i], tau[i], &A[(i+1)*m + i], m);
-		A[i + i * m] = anorm;
+		if (!(root_rank  == rank)) A[i * slice] /= (aii - anorm);
+		for(int j = index + 1; j < slice; j++) {
+			A[i * slice + j] /= (aii - anorm);
+		}
+
+		if (root_rank == rank) A[index + i * slice] = 1;
+		multiply_householder(slice - index, n-i-1, &A[i*slice + index], tau[i], &A[(i+1)*slice + index], slice, p, rank);
+        if (root_rank == rank) A[index + i * slice] = anorm;
 	}
 }
 
@@ -202,14 +218,24 @@ void QR_factorize(int m, int n, double * A, double * tau)
  *
  * c is a vector of dimension m.  On exit, c is overwritten by transpose(Q)*c.
  */
-void multiply_Qt(int m, int k, double * A, double * tau, double * c)
+void multiply_Qt(int m, int k, double * A, double * tau, double * c, int p, int rank)
 {
+    int slice = m;
 	for (int i = 0; i < k; i++) {
 		/* Apply H(i) to A[i:m] */
-		double aii = A[i + i * m];
-		A[i + i * m] = 1;
-		multiply_householder(m-i, 1, &A[i*m + i], tau[i], &c[i], m);
-		A[i + i * m] = aii;
+		int root_rank = i / slice;
+		int index;
+		double aii;
+		if (rank == 0) { 
+			index = i % slice;
+			aii = A[index + i * slice];
+			A[index + i * slice] = 1;
+		}
+		else if (rank < root_rank) index = slice;
+		else index = slice;
+		multiply_householder(slice - index, 1, &A[index + i * slice], tau[i], &c[i], slice, p, rank);
+		if (rank == 0) A[index + i * slice] = aii;
+
 	}
 }
 
@@ -244,10 +270,21 @@ void triangular_solve(int n, const double *U, int ldu, double *b)
 void linear_least_squares(int m, int n, double *A, double *b, int p, int rank)
 {
 	assert(m >= n);
-
+	int slice = ceil(m/p);
 	double tau[n];
-	QR_factorize(m, n, A, tau);                    /* QR factorization of A */
-	multiply_Qt(m, n, A, tau, b);                /* B[0:m] := Q**T * B[0:m] */
+	QR_factorize(m, n, A, tau, p, rank);                    /* QR factorization of A */
+
+
+	double* B = malloc(m * n * sizeof(double));
+	for (int i = n - 1; i >=0; i--) {
+		MPI_Gather(&A[slice * i], slice, MPI_DOUBLE, &B[m * i], slice, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+	}
+	A = B;
+
+	multiply_Qt(m, n, A, tau, b, p, rank);                /* B[0:m] := Q**T * B[0:m] */
+
+
+
 	triangular_solve(n, A, m, b);          /* B[0:n] := inv(R) * B[0:n] */
 }
 
@@ -320,27 +357,11 @@ int main(int argc, char ** argv)
 	char hflop[16];
 	human_format(hflop, FLOP);
 	printf("Least Squares (%sFLOP)\n", hflop);
-
-	if (rank == 1) {
-		for (int i = nvar - 1; i >= 0; i--) {
-			MPI_Send(&A[slice * i], slice, MPI_DOUBLE, 0, i, MPI_COMM_WORLD);
-			// printf("%d de %d à %d\t", slice * nvar,  slice * i, slice * i + slice);
-		}
-	}
-
-	if (p == 2 && rank == 0) {
-		A = realloc(A, 2 * matrix_size);
-		for (int i = nvar - 1; i > 0; i--) {
-			memcpy(&A[i * npoint], &A[i * slice], slice * sizeof(double));
-			MPI_Recv(&A[slice + slice * i], slice, MPI_DOUBLE, 1, i, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-		}
-		MPI_Recv(&A[slice], slice, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-	}
-
+	
 	double start = wtime();
 	
 	/* the real action takes place here */
-	if (rank == 0) linear_least_squares(npoint, nvar, A, data.V, p, rank);
+	linear_least_squares(npoint, nvar, A, data.V, p, rank);
 	
 	double t = wtime() - start;
 

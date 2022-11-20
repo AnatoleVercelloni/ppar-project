@@ -218,9 +218,9 @@ void multiply_Qt(int m, int k, double * A, double * tau, double * c, int p, int 
 			aii = A[index + i * slice];
 			A[index + i * slice] = 1;
 		}
-		else if (rank < root_rank) index = 0;
+		else if (rank > root_rank) index = 0;
 		else index = slice;
-		multiply_householder(slice - index, 1, &A[index + i * slice], tau[i], &c[i], slice, p, rank);
+		multiply_householder(slice - index, 1, &A[index + i * slice], tau[i], &c[index + (slice * rank)], m, p, rank);
 		if (rank == root_rank) A[index + i * slice] = aii;
 
 	}
@@ -268,9 +268,10 @@ void linear_least_squares(int m, int n, double *A, double *b, int p, int rank)
 {
 	assert(m >= n);
 	double tau[n];
+	int slice = ceil(m/p);
 	QR_factorize(m, n, A, tau, p, rank);                    /* QR factorization of A */
 	multiply_Qt(m, n, A, tau, b, p, rank);                /* B[0:m] := Q**T * B[0:m] */
-    // MPI_Allgather(MPI_IN_PLACE, slice, MPI_DOUBLE, b, slice, MPI_DOUBLE, MPI_COMM_WORLD);
+    MPI_Allgather(MPI_IN_PLACE, slice, MPI_DOUBLE, b, slice, MPI_DOUBLE, MPI_COMM_WORLD);
 	triangular_solve(n, A, m, b, p, rank);          /* B[0:n] := inv(R) * B[0:n] */
 }
 
