@@ -9,7 +9,7 @@
 #include <string.h>
 
 
-#include "../par/harmonics.h"
+#include "harmonics.h"
 
 int lmax = -1;
 int npoint;

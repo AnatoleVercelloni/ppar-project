@@ -10,7 +10,7 @@ set(APP_EXE2 validate)
 
 # add the executable
 add_executable(${APP_EXE} 
-    model_par3.c
+    model_par.c
     harmonics.c
 )
 add_executable(${APP_EXE2} 
