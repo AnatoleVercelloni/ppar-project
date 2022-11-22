@@ -179,7 +179,7 @@ void QR_factorize(int m, int n, double * A, double * tau, int p, int rank)
 		if (aii < 0) anorm = -anorm;
 		tau[i] = (anorm - aii) / anorm;
 
-		if (root_rank  > rank) A[i * slice] /= (aii - anorm);
+		if (root_rank < rank) A[i * slice] /= (aii - anorm);
 		for(int j = index + 1; j < slice; j++) {
 			A[i * slice + j] /= (aii - anorm);
 		}
