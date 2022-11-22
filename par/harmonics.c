@@ -81,7 +81,7 @@ void load_data_points(const char *filename, int npoint, struct data_points *self
 	//On recherche le nombre de points total dans le fichier "tot"
 	int tot = 0;
 	char * tabfile[4] = {"../ETOPO1_small.csv", "../ETOPO1_med.csv", "../ETOPO1_hi.csv", "../ETOPO1_ultra.csv"};
-	int tabtot[4] = {64800, 583200, 6480000, 233280000};
+	int tabtot[4] = {64800, 583200, 6480000, 15816836};
 	for (int i = 0; i < 4; i++){
 		if (strcmp(filename, tabfile[i]) == 0) {
 			tot = tabtot[i];
