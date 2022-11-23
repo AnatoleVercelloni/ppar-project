@@ -90,6 +90,9 @@ void load_data_points(const char *filename, int npoint, struct data_points *self
 	if (tot == 0) {
 		err(1, "%s not in the database\n", filename);
 	}
+	if (npoint > tot) {
+		err(1, "too many npoints\n");
+	}
 	
 	//On parcours tout le fichier, mais on n enregistre le point que selon un certain pas "step"
 	// Et jusqu a obtenir npoint (grace a la variable "j")
