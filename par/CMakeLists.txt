@@ -6,7 +6,7 @@ project(validate LANGUAGES C)
 
 set(APP_EXE modelslice)
 set(APP_EXE2 validate)
-set(APP_EXE3 mdoelcycle)
+set(APP_EXE3 modelcycle)
 
 
 # add the executable
