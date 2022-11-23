@@ -123,18 +123,17 @@ double norm(int n, double const *x)
  * C is a 2D array of dimension (ldc, n).  On exit, C is overwritten with H*C.
  * It is required that ldc >= m.
  */
-void multiply_householder(int m, int n, double *v, double tau, double *c, int ldc, int p, int rank)
+void multiply_householder(int m, int n, double *v, double tau, double *c, int ldc, int p, int rank, int offset)
 {
 	for (int j = 0; j < n; j++) {
 		double sum = 0;
 		for (int i = 0; i < m; i++)
-			sum += c[j * ldc + i] * v[i];
+			sum += c[j * ldc + (i * offset)] * v[i];
 		MPI_Allreduce(MPI_IN_PLACE, &sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 		for (int i = 0; i < m; i++)
-			c[j * ldc + i] -= tau * v[i] * sum;
+			c[j * ldc + (i * offset)] -= tau * v[i] * sum;
 	}
 }
-
 /*
  * Compute a QR factorization of a real m-by-n matrix A (with m >= n).
  *
@@ -180,7 +179,7 @@ void QR_factorize(int m, int n, double * A, double * tau, int p, int rank)
 		}
 
 		if (root_rank == rank) A[index + i * slice] = 1;
-		multiply_householder(slice - index, n-i-1, &A[i*slice + index], tau[i], &A[(i+1)*slice + index], slice, p, rank);
+		multiply_householder(slice - index, n-i-1, &A[i*slice + index], tau[i], &A[(i+1)*slice + index], slice, p, rank, 1);
         if (root_rank == rank) A[index + i * slice] = anorm;
 	}
 }
@@ -213,12 +212,11 @@ void multiply_Qt(int m, int k, double * A, double * tau, double * c, int p, int 
             aii = A[index + i * slice];
 			A[index + i * slice] = 1;
 		}
-
-		multiply_householder(slice - index, 1, &A[index + i * slice], tau[i], &c[index + (slice * rank)], m, p, rank);
+		// printf("%d:  %d\n", i, rank + (index * p));
+		multiply_householder(slice - index, 1, &A[index + i * slice], tau[i], &c[rank + (index * p)], m, p, rank, p);
 		if (rank == root_rank) A[index + i * slice] = aii;
 
 	}
-
 }
 
 /*
@@ -235,12 +233,10 @@ void triangular_solve(int n, const double *U, int ldu, double *b, int p, int ran
 		int root_rank = k % p;
 		int index = k / p;
         if (rank < (k % p)) index += 1;
-		if (root_rank == rank) {b[k] /= U[k * slice + k % slice];}
-		else if (root_rank > rank) {index = slice;}
-		else {index = 0;}
+		if (root_rank == rank) {b[k] /= U[k * slice + index];}
 		MPI_Bcast(&b[k], 1, MPI_DOUBLE, root_rank, MPI_COMM_WORLD);
 		for (int i = 0; i < index; i++ ) {
-			b[i] -= b[k] * U[i + k*slice];
+			b[rank + (i * p)] -= b[k] * U[i + k*slice];
 		}
    }
 }
@@ -264,9 +260,14 @@ void linear_least_squares(int m, int n, double *A, double *b, int p, int rank)
 	int slice = ceil(m/p);
 	QR_factorize(m, n, A, tau, p, rank);                    /* QR factorization of A */
 	multiply_Qt(m, n, A, tau, b, p, rank);                /* B[0:m] := Q**T * B[0:m] */
-    for (int i = 0; i < slice; i++) {
-        MPI_Allgather(MPI_IN_PLACE, 1, MPI_DOUBLE, &b[i], 1, MPI_DOUBLE, MPI_COMM_WORLD);
+
+    MPI_Datatype typeV = NULL;
+    MPI_Type_vector(slice, 1, p, MPI_DOUBLE, &typeV);
+    MPI_Type_commit(&typeV);
+    for (int i = 0; i < p; i++) {
+        MPI_Bcast(&b[i], 1, typeV, i, MPI_COMM_WORLD);
     }
+
 	triangular_solve(n, A, m, b, p, rank);          /* B[0:n] := inv(R) * B[0:n] */
 }
 

@@ -247,7 +247,7 @@ void triangular_solve(int n, const double *U, int ldu, double *b, int p, int ran
 		else {index = 0;}
 		MPI_Bcast(&b[k], 1, MPI_DOUBLE, root_rank, MPI_COMM_WORLD);
 		for (int i = 0; i < index; i++ ) {
-			b[i] -= b[k] * U[i + k*slice];
+			b[i + (rank * slice)] -= b[k] * U[i + k*slice];
 		}
    }
 }
