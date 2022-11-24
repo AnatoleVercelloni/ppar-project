@@ -125,6 +125,8 @@ double norm(int n, double const *x)
  */
 void multiply_householder(int m, int n, double *v, double tau, double *c, int ldc, int p, int rank, int offset)
 {
+	// On calcule la somme partielle puis on calcule la somme finale 
+	// qu'on re-injecte dans la matrice ou le vecteur a modifier
 	for (int j = 0; j < n; j++) {
 		double sum = 0;
 		for (int i = 0; i < m; i++)
@@ -158,6 +160,9 @@ void multiply_householder(int m, int n, double *v, double tau, double *c, int ld
  */
 void QR_factorize(int m, int n, double * A, double * tau, int p, int rank)
 {
+	// On calcule le processeur root_rank, puis l'index pour chaque processeur
+	// On broadcast aii et on calcule la norme avec le meme principe que pour la parallelisation par cycle
+	// Enfin, on appelle multiply_householder en fonction de l'index
 	int slice = ceil(m/p);
 	for (int i = 0; i < n; ++i) {
 		int root_rank = i % p;
@@ -201,6 +206,8 @@ void QR_factorize(int m, int n, double * A, double * tau, int p, int rank)
  */
 void multiply_Qt(int m, int k, double * A, double * tau, double * c, int p, int rank)
 {
+	//  On calcule le processeur root_rank puis l'index pour chaque processeur
+	// Puis on appelle la fonction multiply_matrice en fonction de l'index
     int slice = ceil(m/p);
 	for (int i = 0; i < k; i++) {
 		/* Apply H(i) to A[i:m] */
@@ -212,7 +219,6 @@ void multiply_Qt(int m, int k, double * A, double * tau, double * c, int p, int 
             aii = A[index + i * slice];
 			A[index + i * slice] = 1;
 		}
-		// printf("%d:  %d\n", i, rank + (index * p));
 		multiply_householder(slice - index, 1, &A[index + i * slice], tau[i], &c[rank + (index * p)], m, p, rank, p);
 		if (rank == root_rank) A[index + i * slice] = aii;
 
@@ -228,6 +234,8 @@ void multiply_Qt(int m, int k, double * A, double * tau, double * c, int p, int 
  */
 void triangular_solve(int n, const double *U, int ldu, double *b, int p, int rank) 
 {
+	// On calcule le processeur root_rank, ainsi que l'index pour chaque processeur
+	// On modifie b[k], puis on le broadcast afin que les lignes en amont puisse modifier le coefficeint de leur ligne
     int slice = ceil(ldu/p);
     for (int k = n - 1; k >= 0; k--) {
 		int root_rank = k % p;
@@ -257,17 +265,19 @@ void linear_least_squares(int m, int n, double *A, double *b, int p, int rank)
 {
 	assert(m >= n);
 	double tau[n];
-	int slice = ceil(m/p);
 	QR_factorize(m, n, A, tau, p, rank);                    /* QR factorization of A */
 	multiply_Qt(m, n, A, tau, b, p, rank);                /* B[0:m] := Q**T * B[0:m] */
 
-    MPI_Datatype typeV = NULL;
-    MPI_Type_vector(slice, 1, p, MPI_DOUBLE, &typeV);
-    MPI_Type_commit(&typeV);
-    for (int i = 0; i < p; i++) {
-        MPI_Bcast(&b[i], 1, typeV, i, MPI_COMM_WORLD);
-    }
 
+	// Lignes de code qui permet de calculer "residual sum of square", mais fais perdre beaucoup de temps
+	// int slice = ceil(m/p);
+    // MPI_Datatype typeV = NULL;
+    // MPI_Type_vector(slice, 1, p, MPI_DOUBLE, &typeV);
+    // MPI_Type_commit(&typeV);
+    // for (int i = 0; i < p; i++) {
+    //     MPI_Bcast(&b[i], 1, typeV, i, MPI_COMM_WORLD);
+    // }
+ 
 	triangular_solve(n, A, m, b, p, rank);          /* B[0:n] := inv(R) * B[0:n] */
 }
 
@@ -284,7 +294,7 @@ int main(int argc, char ** argv)
 
 	process_command_line_options(argc, argv);
 
-    //Slice pour couper la matrice
+    //variable slice qui compte le nombre de ligne par matrice
     int slice = ceil(npoint/p);
 
 
@@ -319,6 +329,7 @@ int main(int argc, char ** argv)
 	setup_spherical_harmonics(lmax, &model);
 
     // remplace npoint -> slice
+	// On cree les sous-matrice A en fonction de la place de chaque ligne dans la matrice generale A
 	for (int i = 0; i < slice; i++) {
 		computeP(&model, P, sin(data.phi[rank + (i * p)]));
 		

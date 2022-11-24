@@ -127,9 +127,11 @@ void multiply_householder(int m, int n, double *v, double tau, double *c, int ld
 {
 	for (int j = 0; j < n; j++) {
 		double sum = 0;
+		// On calcule la somme partielle dans chaque matrice puis on reunit la valeur
 		for (int i = 0; i < m; i++)
 			sum += c[j * ldc + i] * v[i];
 		MPI_Allreduce(MPI_IN_PLACE, &sum, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+		// Pui on modifie la matrice ou le vecteur que l'on veut modifier
 		for (int i = 0; i < m; i++)
 			c[j * ldc + i] -= tau * v[i] * sum;
 	}
@@ -160,6 +162,11 @@ void multiply_householder(int m, int n, double *v, double tau, double *c, int ld
 void QR_factorize(int m, int n, double * A, double * tau, int p, int rank)
 {
 	int slice = ceil(m/p);
+	// Pour chaque iteration, on cherche le rang qui possede aii, 
+	// on calcule l'index en fonction de la place de la sous-matrice en fonction de aii
+	// On broadcast la valeur de aii 
+	// et on calcule la norme (on calcule les normes partielles au carré, qu'on somme puis on redivise)
+	// Enfin on appelle mutiply_householder en fonction de l'index de chaque processeur
 	for (int i = 0; i < n; ++i) {
 		int root_rank = i / slice;
         double aii, anorm;
@@ -207,6 +214,9 @@ void QR_factorize(int m, int n, double * A, double * tau, int p, int rank)
  */
 void multiply_Qt(int m, int k, double * A, double * tau, double * c, int p, int rank)
 {
+	// Comme pour QR_factorize, on calcule le root_rank,
+	// Puis les index pour chaque processeur 
+	// Puis on appelle multiply_householder en fonction de l'index du processeur
     int slice = ceil(m/p);
 	for (int i = 0; i < k; i++) {
 		/* Apply H(i) to A[i:m] */
@@ -233,8 +243,11 @@ void multiply_Qt(int m, int k, double * A, double * tau, double * c, int p, int 
  * the upper-triangle is read by this function. b and x are n element vectors.
  * On exit, b is overwritten with x.
  */
-void triangular_solve(int n, const double *U, int ldu, double *b, int p, int rank) 
+void triangular_solve(int n, const double *U, int ldu, double *b, int p, int rank)
 {
+	// Pour chaque iteration, on calcule le root_rank, ainsi que les index de pour chaque rank
+	// On modifie le coefficient k du vecteur data.V (variable b), puis on le broadcast afin que 
+	// chaque processeur puissent changer les coefficients inferieur a k.
     int slice = ceil(ldu/p);
     for (int k = n - 1; k >= 0; k--) {
 		int root_rank = k / slice;
@@ -268,10 +281,12 @@ void linear_least_squares(int m, int n, double *A, double *b, int p, int rank)
 {
 	assert(m >= n);
 	double tau[n];
-	int slice = ceil(m/p);
 	QR_factorize(m, n, A, tau, p, rank);                    /* QR factorization of A */
 	multiply_Qt(m, n, A, tau, b, p, rank);                /* B[0:m] := Q**T * B[0:m] */
-    MPI_Allgather(MPI_IN_PLACE, slice, MPI_DOUBLE, b, slice, MPI_DOUBLE, MPI_COMM_WORLD);
+
+	// Lignes de code qui permet de calculer "residual sum of square", mais fais perdre beaucoup de temps
+	// int slice = ceil(m/p);
+    // MPI_Allgather(MPI_IN_PLACE, slice, MPI_DOUBLE, b, slice, MPI_DOUBLE, MPI_COMM_WORLD);
 	triangular_solve(n, A, m, b, p, rank);          /* B[0:n] := inv(R) * B[0:n] */
 }
 
@@ -288,7 +303,7 @@ int main(int argc, char ** argv)
 
 	process_command_line_options(argc, argv);
 
-    //Slice pour couper la matrice
+    //Slice pour couper la matrice, le nombre de ligne par sous-matrice
     int slice = ceil(npoint/p);
 
 
@@ -302,15 +317,15 @@ int main(int argc, char ** argv)
 	long matrix_size = sizeof(double) * nvar * slice;
 	char hsize[16];
 	human_format(hsize, matrix_size);
-	if (rank == 0) printf("Matrix size: %sB\n", hsize); //facteur limitant taille, parallelisation
+	if (rank == 0) printf("Matrix size: %sB\n", hsize);
 
 	double *A = malloc(matrix_size);
 	if (A == NULL)
 		err(1, "cannot allocate matrix");
 
-    // on split v npoint -> slice
+    
 	double * P = malloc((lmax + 1) * (lmax + 1) * sizeof(*P));
-	double * v = malloc(slice * p * sizeof(*v));
+	double * v = malloc(npoint * sizeof(*v));
 	if (P == NULL || v == NULL)
 		err(1, "cannot allocate data points\n");
 
@@ -323,7 +338,7 @@ int main(int argc, char ** argv)
 	struct spherical_harmonics model;
 	setup_spherical_harmonics(lmax, &model);
 
-    // remplace npoint -> slice
+    // remplace npoint -> slice, et on remplace l'indice de data en fonction de la sous-matrice
 	for (int i = 0; i < slice; i++) {
 		computeP(&model, P, sin(data.phi[i + (rank * slice)]));
 		
